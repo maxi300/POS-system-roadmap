@@ -9,7 +9,7 @@ const supabaseKey =
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 const supabase = createClient(supabaseUrl, supabaseKey)
 
-const MOCK_BASE_URL = 'http://localhost:8181'
+const MOCK_BASE_URL = 'http://localhost:8181' // Apunta directo a la raíz del servidor Express
 
 export async function POST(request: Request) {
   try {
@@ -92,7 +92,7 @@ export async function POST(request: Request) {
           .select('nit, password_p12, ambiente_dte')
           .single()
 
-        const resFirmar = await fetch(`${MOCK_BASE_URL}/firmardocumento`, {
+        const resFirmar = await fetch(`${MOCK_BASE_URL}/firmar`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -162,12 +162,12 @@ export async function POST(request: Request) {
         tipo_documento_cliente: cliente?.tipoDoc || '36',
         num_documento_cliente: cliente?.documento || '00000000-0',
         correo_cliente: cliente?.correo || null,
-        nrc_cliente: cliente?.nrc || null, // <--- Ahora guarda correctamente el NRC
+        nrc_cliente: cliente?.nrc || null,
         estado_dte: estadoDte,
         codigo_generacion: codigoGeneracion,
         numero_control: numeroControl,
         sello_recepcion: selloRecepcion,
-        tipo_dte: tipoDteFinal, // <--- DINÁMICO: Guarda '01' o '03' correctamente en la BD
+        tipo_dte: tipoDteFinal,
         json_dte: dteGenerado || null,
         fecha: new Date().toISOString(),
       })

@@ -1,3 +1,5 @@
+
+ // components/dashboards/cashier-pos.tsx
 'use client'
 
 import { useState, useEffect } from 'react'
