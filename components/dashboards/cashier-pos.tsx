@@ -1,5 +1,4 @@
-
- // components/dashboards/cashier-pos.tsx
+// components/dashboards/cashier-pos.tsx
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -179,94 +178,16 @@ export function CashierPOS() {
 
     setIsProcessingDte(true)
     try {
-      const ventaId = `POS-${Date.now()}`
-      let dteEstructuradoParaFirmar = null
-      let respuestaFirmado = null
-
-      const payloadFactura = {
-        venta_id: ventaId,
-        tipo_dte: tipoDte,
-        cliente: {
-          nombre: clientName || (tipoDte === '01' ? "PÚBLICO GENERAL" : "CLIENTE SIN NOMBRE"),
-          documento: clientNitOrDui || "00000000-0",
-          tipoDoc: clientNitOrDui.length > 9 ? "36" : "13",
-          nrc: clientNrc || null,
-          correo: clientEmail || null,
-          direccion: clientDireccion || null,
-          actividad: clientActividad || null
-        },
-        items: cart.map((item, idx) => {
-          const precioUnitario = Number(item.precio_venta)
-          const cantidadNum = Number(item.quantity)
-          const totalItem = precioUnitario * cantidadNum
-          const baseImGRAV = totalItem / 1.13
-          const ivaItem = tipoDte === '03' ? totalItem - baseImGRAV : (totalItem * 0.13) / 1.13
-
-          return {
-            codigo: item.codigo_barras || `REF-${idx}`,
-            nombre: item.nombre,
-            cantidad: cantidadNum,
-            precioUnitario: precioUnitario,
-            montoDescu: 0,
-            ventaGravada: Number(baseImGRAV.toFixed(2)),
-            ivaItem: Number(ivaItem.toFixed(2)),
-            noGravado: 0,
-            ventaExenta: 0,
-            ventaNoSuj: 0,
-            psv: 0,
-            noOnerosa: 0,
-            tipoItem: 1
-          }
-        }),
-        metodo_pago: paymentMethod
-      }
-
-      // Intentar conectar con el servicio DTE local con control de tiempo de espera (timeout)
-      try {
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 4000)
-
-        const respuestaFacturacion = await fetch('http://localhost:8181/api/facturas/generar', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payloadFactura),
-          signal: controller.signal
-        })
-        clearTimeout(timeoutId)
-        const resultadoDTE = await respuestaFacturacion.json()
-
-        if (resultadoDTE?.factura?.dte_oficial) {
-          dteEstructuradoParaFirmar = resultadoDTE.factura.dte_oficial
-        }
-      } catch (err) {
-        console.warn('[POS] Servidor local DTE no disponible u ocupado, generando contingencia local.', err)
-      }
-
-      if (dteEstructuradoParaFirmar) {
-        try {
-          const responseFirmar = await fetch('http://localhost:8181/firmardocumento', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              nit: "06142805951023",
-              activo: true,
-              passwordPri: "123456",
-              dteJson: dteEstructuradoParaFirmar
-            })
-          })
-          respuestaFirmado = await responseFirmar.json()
-        } catch (errorFirma) {
-          console.error('[POS] Error al firmar documento:', errorFirma)
-        }
-      }
-
+      // Todo el flujo DTE (generar → firmar → guardar) ocurre en /api/ventas
+      // El POS no llama a localhost:8181 directamente — eso lo hace el backend de Next.js
       const saleItems: SaleItem[] = cart.map((item) => ({
         producto_id: item.id,
         cantidad: item.quantity,
         precio_unitario: Number(item.precio_venta),
+        nombre: item.nombre,
+        codigo: item.codigo_barras || '',
       }))
 
-      // Registrar venta en Base de Datos Supabase incluyendo correo y dirección
       const sale = await createSale(
         saleItems,
         paymentMethod === '02' ? 'tarjeta' : paymentMethod === '03' ? 'cheque' : 'efectivo',
@@ -277,9 +198,9 @@ export function CashierPOS() {
           tipoDoc: clientNitOrDui.length > 9 ? '36' : '13',
           nrc: clientNrc || null,
           correo: clientEmail || null,
-          direccion: clientDireccion || null
+          direccion: clientDireccion || null,
         },
-        tipoDte 
+        tipoDte
       )
 
       if (!sale) {
@@ -309,8 +230,13 @@ export function CashierPOS() {
         tax,
         total,
         paymentMethod,
-        dteGenerado: respuestaFirmado,
-        selloRecibido: respuestaFirmado?.selloRecibido || 'CONTINGENCIA-HACIENDA-OK',
+        // Los códigos DTE vienen del backend — ya fueron firmados y guardados en Supabase
+        dteGenerado: {
+          codigoGeneracion: sale.codigo_generacion || 'PENDIENTE',
+          numeroControl: sale.numero_control || 'PENDIENTE',
+          selloRecibido: sale.sello_recepcion,
+        },
+        selloRecibido: sale.sello_recepcion || sale.estado_dte || 'PROCESADO',
         date: new Date(),
       })
 

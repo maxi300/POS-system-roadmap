@@ -92,7 +92,7 @@ export async function POST(request: Request) {
           .select('nit, password_p12, ambiente_dte')
           .single()
 
-        const resFirmar = await fetch(`${MOCK_BASE_URL}/firmar`, {
+        const resFirmar = await fetch(`${MOCK_BASE_URL}/firmardocumento`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
