@@ -15,7 +15,7 @@ const PORT = process.env.PORT || 8181;
 // ─── URL del firmador Docker ──────────────────────────────────────────────────
 // El JAR de Hacienda expone /firmar (no /firmardocumento)
 // En modo nonssl el contenedor acepta HTTP aunque esté en el puerto 443
-const URL_FIRMADOR = process.env.URL_FIRMADOR || 'http://localhost:443/firmar';
+const URL_FIRMADOR = process.env.URL_FIRMADOR || 'http://localhost:8113/firmardocumento';
 
 console.log(`[CONFIG] URL_FIRMADOR apunta a: ${URL_FIRMADOR}`);
 
@@ -50,7 +50,7 @@ app.get('/api/info', (req, res) => {
 app.get('/api/test-firmador', async (req, res) => {
   try {
     // El JAR de Hacienda tiene un endpoint GET /health o simplemente responde al root
-    const response = await axios.get(URL_FIRMADOR.replace('/firmar', '/health'), {
+    const response = await axios.get(URL_FIRMADOR.replace('/firmardocumento', '/health'), {
       timeout: 5000
     });
     res.json({ ok: true, status: response.status, data: response.data });
@@ -58,7 +58,7 @@ app.get('/api/test-firmador', async (req, res) => {
     res.status(500).json({
       ok: false,
       error: error.message,
-      url_intentada: URL_FIRMADOR.replace('/firmar', '/health'),
+      url_intentada: URL_FIRMADOR.replace('/firmardocumento', '/health'),
       sugerencia: 'Verifica que el contenedor Docker esté corriendo con: docker ps'
     });
   }
@@ -204,7 +204,7 @@ app.post('/api/facturas/generar', (req, res) => {
 
 // ─── Firmar DTE — puente hacia el contenedor Docker de Hacienda ───────────────
 // Acepta tanto /firmardocumento como /firmardocumento/ para compatibilidad
-app.post(['/firmardocumento', '/firmardocumento/'], async (req, res) => {
+app.post(['/firmardocumento', '/firmardocumento/', '/firmar', '/firmar/'], async (req, res) => {
   console.log(`[FIRMADOR] Recibida petición. Reenviando a Docker: ${URL_FIRMADOR}`);
 
   try {
