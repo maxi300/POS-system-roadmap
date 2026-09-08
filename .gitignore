@@ -48,3 +48,30 @@ setup.sh
 
 # Carpeta de imágenes pesadas / temporales que vimos en la raíz
 IMAGENESSS.../
+# Dependencias y compilación
+node_modules/
+.next/
+out/
+tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+# Credenciales y claves sensibles (DTE / Supabase)
+.env
+.env.local
+.env.*.local
+*.p12
+*.pem
+*.crt
+
+# IGNORAR TODOS LOS ARCHIVOS MARKDOWN, TEXTO Y CAPTURAS EN LA RAÍZ
+# (Excepto el README.md principal del proyecto)
+!README.md
+*.md
+*.txt
+*.png
+*.jpg
+*.jpeg
+
+# IGNORAR TODOS LOS SCRIPTS SQL
+*.sql
+*.sh
