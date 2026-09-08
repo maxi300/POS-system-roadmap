@@ -1,0 +1,121 @@
+services:
+  # ============================================
+  # CONTENEDOR 1: POS (Next.js)
+  # ============================================
+  pos:
+    build:
+      context: .
+      dockerfile: Dockerfile.pos
+      args:
+        - NEXT_PUBLIC_SUPABASE_URL=https://ehnbuveijpjkgqglopef.supabase.co
+        - NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVobmJ1dmVpanBqa2dxZ2xvcGVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYyOTAxNDcsImV4cCI6MjA5MTg2NjE0N30.A5Xagk1Gzf7YlamMIFSP3qEipRtkqqJRgHL9vYJoJ4k
+    container_name: tienda-pos
+    ports:
+      - "3001:3000"
+    environment:
+      - NEXT_PUBLIC_SUPABASE_URL=https://ehnbuveijpjkgqglopef.supabase.co
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVobmJ1dmVpanBqa2dxZ2xvcGVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYyOTAxNDcsImV4cCI6MjA5MTg2NjE0N30.A5Xagk1Gzf7YlamMIFSP3qEipRtkqqJRgHL9vYJoJ4k
+      - TIENDA_ID=tienda-1
+      - TIENDA_NOMBRE=Mi Tienda
+      - NODE_ENV=production
+      - PORT=3000
+      - TZ=America/El_Salvador
+    volumes:
+      - ./data/pos:/app/data
+      - ./uploads:/app/public/uploads
+    depends_on:
+      facturacion:
+        condition: service_healthy
+    networks:
+      - tienda-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+
+  # ============================================
+  # CONTENEDOR 2: FACTURACIÓN (API Node.js)
+  # ============================================
+  facturacion:
+    build:
+      context: .
+      dockerfile: Dockerfile.facturacion
+    container_name: tienda-facturacion
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      - NODE_ENV=production
+      - TIENDA_ID=tienda-1
+      - HACIENDA_USER=${HACIENDA_USER:-}
+      - HACIENDA_PASSWORD=${HACIENDA_PASSWORD:-}
+      - HACIENDA_ENV=sandbox
+      - TZ=America/El_Salvador
+    volumes:
+      - ./data/facturas:/app/data/facturas
+    networks:
+      - tienda-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+
+  # ============================================
+  # CONTENEDOR 3: BASE DE DATOS
+  # ============================================
+  db:
+    image: postgres:15-alpine
+    container_name: tienda-db
+    environment:
+      - POSTGRES_USER=tienda_admin
+      - POSTGRES_PASSWORD=tienda_db_pass_123
+      - POSTGRES_DB=tienda_pos
+      - POSTGRES_INITDB_ARGS=--encoding=UTF8
+      - TZ=America/El_Salvador
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+#     - ./services/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - tienda-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tienda_admin -d tienda_pos"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # CONTENEDOR 4: ADMINER
+  # ============================================
+  adminer:
+    image: adminer:latest
+    container_name: tienda-adminer
+    ports:
+      - "8080:8080"
+    networks:
+      - tienda-network
+    depends_on:
+      - db
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+    driver: local
+
+networks:
+  tienda-network:
+    driver: bridge

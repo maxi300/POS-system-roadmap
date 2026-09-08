@@ -1,0 +1,56 @@
+# Dockerfile para POS - Next.js
+# Construcción multi-etapa para optimizar tamaño
+
+# ETAPA 1: BUILD
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Copiar package files
+COPY package.json pnpm-lock.yaml* ./
+
+# Instalar dependencias
+RUN npm install -g pnpm && \
+    pnpm install --no-frozen-lockfile
+
+# Copiar código fuente
+COPY . .
+
+# Build de Next.js
+# ⬇️ AGREGA ESTAS LÍNEAS JUSTO ANTES DEL BUILD PARA QUE LEA DOCKER-COMPOSE:
+ARG NEXT_PUBLIC_SUPABASE_URL
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
+ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
+ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
+RUN pnpm build
+
+# ETAPA 2: RUNTIME
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copiar solo lo necesario del builder
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/package.json ./
+
+# Crear usuario no-root
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nextjs -u 1001
+
+USER nextjs
+
+# Exponer puerto
+EXPOSE 3000
+
+# Variables de entorno por defecto (se sobrescriben con docker-compose)
+ENV NODE_ENV=production
+ENV PORT=3000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD node -e "require('http').get('http://localhost:3000', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"
+
+# Comando de inicio
+CMD ["node_modules/.bin/next", "start"]

@@ -1,0 +1,50 @@
+# v0 sandbox internal files
+__v0_runtime_loader.js
+__v0_devtools.tsx
+__v0_jsx-dev-runtime.ts
+.snowflake/
+.v0-trash/
+.vercel/
+next.user-config.*
+
+# Environment variables
+.env*.local
+
+# Common ignores
+node_modules
+.next/
+.DS_Store
+# Dependencias
+node_modules/
+.next/
+out/
+
+# Variables de entorno y llaves (¡Muy importante para DTE / Supabase!)
+.env
+.env.local
+.env.*.local
+*.p12
+*.pem
+*.crt
+
+# Logs y SO
+*.log
+.DS_Store
+
+# Compilaciones y cache de TypeScript
+tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+# Documentación temporal y notas locales
+SOLUCION_FINAL.md
+ULTIMO_UPDATE.md
+VENTA_COMPLETA_CON_RECIBO.md
+*.txt
+
+# Scripts de base de datos temporales / de apoyo
+SQL_*.sql
+*.sql
+setup.sh
+
+# Carpeta de imágenes pesadas / temporales que vimos en la raíz
+IMAGENESSS.../
