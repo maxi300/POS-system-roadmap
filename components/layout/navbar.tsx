@@ -2,7 +2,7 @@
 
 import { useAuth } from '@/lib/auth-context'
 import { Button } from '@/components/ui/button'
-import { UserCircle, LogOut, Home, Package, Users, BarChart3, ShoppingCart, FileText } from 'lucide-react'
+import { UserCircle, LogOut, Home, Package, Users, BarChart3, ShoppingCart, FileText, Settings } from 'lucide-react'
 
 interface NavItem {
   label: string
@@ -23,6 +23,7 @@ export function Navbar({ onNavigate }: { onNavigate: (section: string) => void }
           { label: 'Dashboard', icon: <Home size={20} />, action: 'dashboard' },
           { label: 'Productos', icon: <Package size={20} />, action: 'productos' },
           { label: 'Usuarios', icon: <Users size={20} />, action: 'usuarios' },
+          { label: 'Config. Empresa', icon: <Settings size={20} />, action: 'dte' },
           { label: 'Reportes', icon: <BarChart3 size={20} />, action: 'reportes' },
         ]
       case 'manager':

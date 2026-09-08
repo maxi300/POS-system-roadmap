@@ -1,3 +1,6 @@
+// pos_web/app/products/page.tsx
+
+
 "use client"
 
 import { Card } from "@/components/ui/card"

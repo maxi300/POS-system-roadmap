@@ -14,8 +14,8 @@ class DTEManager:
     Integración con API del Ministerio de Hacienda (MH)
     """
     
-    # Ambiente (cambiar a producción cuando esté listo)
-    AMBIENTE = os.environ.get('DTE_AMBIENTE', 'PRODUCCION')  # PRUEBAS o PRODUCCION
+    # Ambiente (cambiar a PRODUCCION mediante variable de entorno cuando esté listo)
+    AMBIENTE = os.environ.get('DTE_AMBIENTE', 'PRUEBAS')  # PRUEBAS o PRODUCCION
     
     # URLs de la API DTE
     DTE_API_URLS = {
@@ -40,7 +40,7 @@ class DTEManager:
     
     def __init__(self, store):
         self.store = store
-        self.api_url = self.DTE_API_URLS[self.AMBIENTE]
+        self.api_url = self.DTE_API_URLS.get(self.AMBIENTE, self.DTE_API_URLS['PRUEBAS'])
         self.nrc = store.nrc
         self.nit = store.nit or ''
         self.giro = store.giro
@@ -54,7 +54,6 @@ class DTEManager:
         """
         Genera un Documento Tributario Electrónico (DTE) de factura
         """
-        
         # Validar que la tienda tenga los datos fiscales completos
         if not self.nrc or not self.giro:
             raise ValidationError("La tienda debe tener NRC y Giro configurados")
@@ -62,8 +61,8 @@ class DTEManager:
         # Construir XML del DTE
         dte_xml = self._build_invoice_xml(sale)
         
-        # Si es ambiente de prueba o hay problema de conectividad, usar contingencia
-        if self.AMBIENTE == 'PRUEBAS':
+        # Si estamos explícitamente en pruebas locales o se requiere forzar contingencia
+        if self.AMBIENTE == 'PRUEBAS' and os.environ.get('FORCE_LOCAL_CONTINGENCY', 'False').lower() == 'true':
             return self._handle_contingency(sale, 'PRUEBAS')
         
         try:
@@ -80,7 +79,7 @@ class DTEManager:
                     'control_number': response.get('control_number'),
                 }
             else:
-                # Error en envío, usar contingencia
+                # Si falla el servidor en ambiente de pruebas, manejamos contingencia o retornamos error descriptivo
                 return self._handle_contingency(sale, 'TIMEOUT')
         
         except Exception as e:
@@ -112,7 +111,8 @@ class DTEManager:
         ET.SubElement(header_data, 'dte:NumeroDeRegNoAutorizado').text = self.nrc
         ET.SubElement(header_data, 'dte:FechaDeEmision').text = sale.date.strftime('%d/%m/%Y')
         ET.SubElement(header_data, 'dte:HoraDeEmision').text = sale.date.strftime('%H:%M:%S')
-        ET.SubElement(header_data, 'dte:Ambiente').text = '02'  # 01=Prueba, 02=Producción
+        # Ambiente: '01' para pruebas, '02' para producción
+        ET.SubElement(header_data, 'dte:Ambiente').text = '01' if self.AMBIENTE == 'PRUEBAS' else '02'
         
         # Emisor (la tienda)
         sender = ET.SubElement(header_data, 'dte:Emisor')
@@ -126,15 +126,23 @@ class DTEManager:
         establishment = ET.SubElement(establishments, 'dte:EstablecimientoAutorizado')
         ET.SubElement(establishment, 'dte:Codigo').text = '01'
         ET.SubElement(establishment, 'dte:Nombre').text = self.store.name
-        ET.SubElement(establishment, 'dte:Direccion').text = self.store.address
-        ET.SubElement(establishment, 'dte:Telefono').text = self.store.phone
+        ET.SubElement(establishment, 'dte:Direccion').text = getattr(self.store, 'address', 'San Salvador, El Salvador')
+        ET.SubElement(establishment, 'dte:Telefono').text = getattr(self.store, 'phone', '2222-2222')
         
-        # Receptor (cliente)
+        # Receptor (cliente dinámico: Consumidor Final o Empresa)
         receiver = ET.SubElement(header_data, 'dte:Receptor')
-        receiver_name = sale.customer_name or 'Consumidor Final'
-        ET.SubElement(receiver, 'dte:NombreReceptor').text = receiver_name
-        ET.SubElement(receiver, 'dte:TipoDocumento').text = '36'  # NIT
-        ET.SubElement(receiver, 'dte:NumeroDocumento').text = sale.customer_nrc or '0000-000000-000-0'
+        customer_name = getattr(sale, 'customer_name', None) or 'CONSUMIDOR FINAL'
+        customer_doc = getattr(sale, 'customer_document', None) or '00000000-0'
+        
+        ET.SubElement(receiver, 'dte:NombreReceptor').text = customer_name
+        
+        # Si el documento es NIT (36) o DUI (13) según corresponda
+        if customer_doc != '00000000-0' and len(customer_doc.replace('-', '')) == 14:
+            ET.SubElement(receiver, 'dte:TipoDocumento').text = '36'  # NIT
+        else:
+            ET.SubElement(receiver, 'dte:TipoDocumento').text = '13'  # DUI o Genérico
+            
+        ET.SubElement(receiver, 'dte:NumeroDocumento').text = customer_doc
         
         # Items del DTE
         items = ET.SubElement(dte, 'dte:Detalle')
@@ -142,11 +150,14 @@ class DTEManager:
             detail_item = ET.SubElement(items, 'dte:Item')
             detail_item.set('numeroLinea', str(idx))
             
+            product_name = getattr(item.product, 'name', None) or 'Producto sin descripción'
+            product_code = getattr(item.product, 'code', f"PROD-{idx}")
+            
             ET.SubElement(detail_item, 'dte:NumeroLinea').text = str(idx)
-            ET.SubElement(detail_item, 'dte:Codigo').text = item.product.code
-            ET.SubElement(detail_item, 'dte:Descripcion').text = item.product.name
+            ET.SubElement(detail_item, 'dte:Codigo').text = product_code
+            ET.SubElement(detail_item, 'dte:Descripcion').text = product_name
             ET.SubElement(detail_item, 'dte:Cantidad').text = str(item.quantity)
-            ET.SubElement(detail_item, 'dte:PrecioUnitario').text = f"{item.unit_price:.2f}"
+            ET.SubElement(detail_item, 'dte:PrecioUnitario').text = f"{item.unit_price:.8f}"
             ET.SubElement(detail_item, 'dte:Descuento').text = '0.00'
             ET.SubElement(detail_item, 'dte:Monto').text = f"{item.subtotal:.2f}"
             
@@ -158,7 +169,7 @@ class DTEManager:
         
         # Resumen
         summary = ET.SubElement(dte, 'dte:Resumen')
-        ET.SubElement(summary, 'dte:TotalOperaciones').text = str(len(sale.items.all()))
+        ET.SubElement(summary, 'dte:TotalOperaciones').text = str(sale.items.count())
         ET.SubElement(summary, 'dte:TotalEnOperaciones').text = f"{sale.subtotal:.2f}"
         ET.SubElement(summary, 'dte:DflMonto').text = '0.00'
         ET.SubElement(summary, 'dte:TotalIVA').text = f"{sale.tax:.2f}"
@@ -169,16 +180,11 @@ class DTEManager:
     def _generate_control_number(self, sale) -> str:
         """
         Genera número de control único para DTE
-        Formato: RRRRRRRRRRRRSSNNNNNN
+        Formato requerido: RRRRRRRRRRRRSSNNNNNN
         """
-        # Parte 1: NRC (14 dígitos)
         nrc_part = self.nrc.replace('-', '')[:14].ljust(14, '0')
-        
-        # Parte 2: Establecimiento (2 dígitos) + Tipo de documento (2 dígitos)
         doc_part = f"01{self.DOCUMENT_TYPES['FACTURA']}"
-        
-        # Parte 3: Secuencia (6 dígitos)
-        seq = str(sale.id)[:6].rjust(6, '0')
+        seq = str(sale.id)[-6:].rjust(6, '0') if str(sale.id).isdigit() else '000001'
         
         return f"{nrc_part}{doc_part}{seq}"
     
@@ -208,7 +214,7 @@ class DTEManager:
             if response.status_code == 200:
                 data = response.json()
                 return {
-                    'success': data.get('estado') == '1',
+                    'success': data.get('estado') == '1' or data.get('codigo') == '200',
                     'dte_number': data.get('saf'),
                     'qr_code': data.get('codigoGeneracion'),
                     'timestamp': data.get('fhProcesamiento'),
@@ -227,15 +233,15 @@ class DTEManager:
     
     def _handle_contingency(self, sale, contingency_type: str) -> Dict:
         """
-        Genera factura en contingencia (cuando MH no está disponible)
-        Después se sincroniza cuando hay conexión
+        Genera factura en contingencia local para pruebas o caídas del servicio del MH
         """
         control_number = self._generate_control_number(sale)
         
-        # Generar código de generación (similar a QR del MH)
         cod_generacion = hashlib.sha256(
             f"{control_number}{sale.date.isoformat()}".encode()
-        ).hexdigest()[:36]
+        ).hexdigest().upper()
+        # Formatear como UUID estándar de MH
+        cod_generacion = f"{cod_generacion[:8]}-{cod_generacion[8:12]}-{cod_generacion[12:16]}-{cod_generacion[16:20]}-{cod_generacion[20:32]}"
         
         return {
             'success': True,
@@ -245,19 +251,5 @@ class DTEManager:
             'control_number': control_number,
             'dte_qr': cod_generacion,
             'timestamp': datetime.now().isoformat(),
-            'message': 'Factura en contingencia. Se sincronizará con MH cuando haya conexión.'
-        }
-    
-    def generate_credit_note(self, return_obj) -> Dict:
-        """
-        Genera una Nota de Crédito (DTE Tipo 03)
-        """
-        # Implementación similar a factura pero para notas de crédito
-        # Se referencia la venta original
-        print("[v0] Generando nota de crédito...")
-        
-        return {
-            'success': True,
-            'dte_number': f"NC-{return_obj.id}",
-            'reference_sale': str(return_obj.sale.id),
+            'message': 'Factura procesada localmente para pruebas / contingencia.'
         }

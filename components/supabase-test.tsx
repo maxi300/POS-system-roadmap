@@ -1,3 +1,6 @@
+
+// components/supabase-test.tsx
+
 'use client'
 
 import { useEffect, useState } from 'react'

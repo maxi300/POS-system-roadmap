@@ -13,6 +13,8 @@ interface Sale {
   total: number
   metodo_pago: string
   fecha: string
+  estado_dte?: string
+  codigo_generacion?: string
 }
 
 interface Product {
@@ -25,6 +27,7 @@ interface Product {
 export function ManagerDashboard({ currentSection }: { currentSection: string }) {
   const { user } = useAuth()
   const [sales, setSales] = useState<Sale[]>([])
+  const [pendingDtes, setPendingDtes] = useState<Sale[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [stats, setStats] = useState({
     totalVentasHoy: 0,
@@ -32,39 +35,48 @@ export function ManagerDashboard({ currentSection }: { currentSection: string })
     productosBajoStock: 0,
   })
   const [loading, setLoading] = useState(true)
+  const [transmitting, setTransmitting] = useState(false)
+  const [transmitResult, setTransmitResult] = useState<any>(null)
 
   useEffect(() => {
     loadData()
   }, [])
 
-  // 👇 La función ahora SÍ recibe el parámetro
   async function loadData(esRefrescoAutomatico = false) {
     try {
       if (!esRefrescoAutomatico) setLoading(true)
 
       const today = new Date().toISOString().split('T')[0]
 
-      // Pedir ventas Y productos al mismo tiempo (más rápido)
-      const [ventasResult, productsResult] = await Promise.all([
+      const [ventasResult, productsResult, dtesPendientesResult] = await Promise.all([
         supabase
           .from('ventas')
           .select('*')
           .gte('fecha', `${today}T00:00:00`)
-          .lte('fecha', `${today}T23:59:59`),
+          .lte('fecha', `${today}T23:59:59`)
+          .order('fecha', { ascending: false }),
         supabase
           .from('productos')
           .select('*')
           .lt('stock', 10),
+        supabase
+          .from('ventas')
+          .select('*')
+          .eq('estado_dte', 'PENDIENTE')
+          .order('fecha', { ascending: true })
       ])
 
       if (ventasResult.error) throw ventasResult.error
       if (productsResult.error) throw productsResult.error
+      if (dtesPendientesResult.error) throw dtesPendientesResult.error
 
       const ventasData = ventasResult.data || []
       const productsData = productsResult.data || []
+      const pendingDtesData = dtesPendientesResult.data || []
 
       setSales(ventasData)
       setProducts(productsData)
+      setPendingDtes(pendingDtesData)
 
       const totalVentas = ventasData.reduce((sum: number, v: any) => sum + (v.total || 0), 0)
 
@@ -74,17 +86,29 @@ export function ManagerDashboard({ currentSection }: { currentSection: string })
         productosBajoStock: productsData.length,
       })
     } catch (error) {
-      console.error('[v0] Error loading data:', error)
+      console.error('[POS] Error cargando datos:', error)
     } finally {
       if (!esRefrescoAutomatico) setLoading(false)
     }
   }
 
-  async function generarDTE(ventaId: string) {
+  async function transmitirLoteDTE() {
     try {
-      alert(`✅ DTE generado para venta ${ventaId.substring(0, 8)}\n\nEn producción se enviaría al MH`)
-    } catch (error) {
-      console.error('[v0] Error:', error)
+      setTransmitting(true)
+      setTransmitResult(null)
+
+      const res = await fetch('/api/dte/transmitir-lote', { method: 'POST' })
+      const data = await res.json()
+
+      if (!res.ok) throw new Error(data.error || 'Error en la transmisión')
+
+      setTransmitResult(data)
+      await loadData(true)
+    } catch (error: any) {
+      console.error('[DTE] Error transmitiendo lote:', error)
+      alert(`Error al transmitir lote: ${error.message}`)
+    } finally {
+      setTransmitting(false)
     }
   }
 
@@ -139,21 +163,41 @@ export function ManagerDashboard({ currentSection }: { currentSection: string })
   if (currentSection === 'dte') {
     return (
       <div className="space-y-6">
-        <div>
-          <h2 className="text-3xl font-bold text-white mb-2">Facturación Electrónica (DTE)</h2>
-          <p className="text-slate-400">Genera y gestiona documentos tributarios</p>
+        <div className="flex justify-between items-center">
+          <div>
+            <h2 className="text-3xl font-bold text-white mb-2">Facturación Electrónica (DTE)</h2>
+            <p className="text-slate-400">Gestión y transmisión de contingencias al Ministerio de Hacienda</p>
+          </div>
+          <Button
+            onClick={transmitirLoteDTE}
+            disabled={transmitting || pendingDtes.length === 0}
+            className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold disabled:opacity-50"
+          >
+            {transmitting ? 'Transmitiendo Lote...' : `Transmitir Todo (${pendingDtes.length})`}
+          </Button>
         </div>
+
+        {transmitResult && (
+          <Card className="bg-slate-800 border-emerald-500 border">
+            <CardContent className="pt-4">
+              <p className="font-bold text-emerald-400">{transmitResult.message}</p>
+              <p className="text-sm text-slate-300">
+                Procesados: {transmitResult.total} | Transmitidos: {transmitResult.transmitidos} | Fallidos: {transmitResult.fallidos}
+              </p>
+            </CardContent>
+          </Card>
+        )}
 
         <Card className="bg-slate-800 border-slate-700">
           <CardHeader>
-            <CardTitle className="text-white">DTEs Disponibles</CardTitle>
+            <CardTitle className="text-white">DTEs Pendientes de Transmisión ({pendingDtes.length})</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2 max-h-96 overflow-y-auto">
-              {sales.length === 0 ? (
-                <p className="text-slate-400">Sin ventas para generar DTE</p>
+              {pendingDtes.length === 0 ? (
+                <p className="text-slate-400">No hay DTEs pendientes por transmitir en contingencia.</p>
               ) : (
-                sales.map((venta) => (
+                pendingDtes.map((venta) => (
                   <div
                     key={venta.id}
                     className="flex justify-between items-center p-3 bg-blue-900/20 border border-blue-700 rounded"
@@ -163,13 +207,9 @@ export function ManagerDashboard({ currentSection }: { currentSection: string })
                       <p className="text-xs text-slate-400">{new Date(venta.fecha).toLocaleString()}</p>
                       <p className="text-xs text-blue-300 mt-1">Total: ${parseFloat(String(venta.total)).toFixed(2)}</p>
                     </div>
-                    <Button
-                      onClick={() => generarDTE(venta.id)}
-                      className="bg-green-600 hover:bg-green-700"
-                      size="sm"
-                    >
-                      Generar
-                    </Button>
+                    <span className="text-xs font-semibold px-2.5 py-1 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                      PENDIENTE
+                    </span>
                   </div>
                 ))
               )}
